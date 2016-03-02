@@ -23,13 +23,3 @@ export function isExpired(bet) {
   const { expires, time } = bet;
   return expires && Date.now() >= time;
 }
-
-
-export function sortBetsBy() {
-
-}
-
-
-export function filterBetsBy() {
-
-}

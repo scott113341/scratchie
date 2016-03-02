@@ -9,7 +9,15 @@ export default function Tabber({ DOM, props$ }) {
 
   const tabClick$ = DOM.select(styles.tab.selector).events('click').startWith(false);
   const tabs$ = props$.map(props => props.tabs);
-  const doms$$ = props$.map(props => props.tabs.map(tab => tab.content.DOM));
+  const doms$$ = props$.map(props => props.tabs.map(tab => tab.content)).map(log('doms$$')).share();
+  //const doms$ = doms$$
+    //.combineLatest(...doms$$, (...a) => {
+    //  console.log('wtffffff', a);
+    //  return a;
+    //})
+    //.concatAll()
+    //.map(log('wtf'));
+
 
   // observable that updates which tab is active after clicks
   const activatedTabs$ = Observable.combineLatest(
@@ -28,7 +36,7 @@ export default function Tabber({ DOM, props$ }) {
   const vtree$ = Observable.combineLatest(
     activatedTabs$,
     doms$$,
-    (tabs, doms$) => {
+    (tabs, doms) => {
       return h('div.tabber', [
         tabs.map((tab, index) => {
           const classes = classesFrom({
@@ -43,7 +51,7 @@ export default function Tabber({ DOM, props$ }) {
             [styles.content]: true,
             [styles.active]: tab.active,
           });
-          return h(`div${classes}`, { index }, [ doms$[index] ]);
+          return h(`div${classes}`, { index }, [ doms[index] ]);
         }),
       ]);
     }
@@ -81,7 +89,7 @@ const styles = csjs`
   .content.active {
     display: block;
     border: ${borderStyle};
-    padding: 0 10px;
+    padding: 10px;
   }
 
 `;

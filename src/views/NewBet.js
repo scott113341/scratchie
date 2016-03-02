@@ -1,112 +1,149 @@
-import shim from './shim';
-
 import { Observable } from 'rx';
 import Cycle from '@cycle/core';
-import { div, h1, button, table, tr, th, td, pre, h, makeDOMDriver } from '@cycle/dom';
-import { makeFirebaseDriver } from 'cycle-firebase-driver';
+import { h } from '@cycle/dom';
 import csjs from 'csjs-inject';
 
-import { messages } from './bet';
-import { collate, associate, stringify, log } from './util';
+import { collate, associate, stringify, log } from '../util';
 
 
 export default function NewBet({ DOM, firebase }) {
 
+  function getValue(target) {
+    const casts = {
+      user1Bet: Number,
+      user2Bet: Number,
+      scratchieValue: Number,
+      expiresTimestamp: Date.parse,
+    };
+    const cast = casts[target.ref];
+    return cast ? cast(target.value) : target.value;
+  }
 
+  const auth$ = firebase.getAuth();
+  const users$ = firebase
+    .on('value', { ref: '/users' })
+    .map(data => data.val());
 
+  const defaultValues$ = Observable
+    .combineLatest(auth$, users$)
+    .take(1)
+    .map(([auth, users]) => {
+      const user1 = Object.entries(users).find(([id, user]) => id === auth.uid)[0];
+      const user2 = Object.entries(users)[0][0];
+      const user1Bet = 1;
+      const user2Bet = 1;
+      const scratchieValue = 2;
 
-  // stream of clicks on the .load button
-  /*
-   const clickMutateButton$ = DOM.select(styles.button.selector).events('click');
+      return {
+        user1,
+        user2,
+        user1Bet,
+        user2Bet,
+        scratchieValue,
 
-   // stream of request objects for firebase driver
-   const mutateRequest$ = clickMutateButton$
-   .map(() => {
-   const rand = Math.ceil(Math.random() * 100);
-   return {
-   ref: '/bets/wtf',
-   action: ['set', { no: `money ${rand}` }],
-   };
-   })
-   .share();
-
-   // accumulated$ of request/response/req-res objects
-   const accRequests$ = collate(mutateRequest$);
-   const accResponses$ = collate(firebase.response$$.mergeAll());
-   const accReqRes$ = associate(accRequests$, accResponses$, 'request');
-
-   // stream of /bets
-   const bets$ = firebase
-   .on('value', { ref: '/bets' })
-   .map(data => data.val() || {})
-   .map(log('bet$'))
-   .startWith({});
-   */
-
-
-
-  const makeBet$ = DOM
-    .select('.new')
-    .events('click')
-    .map(() => ({
-      ref: '/bets',
-      action: ['push', {
-        user1: 'google:116128316559316728207',
-        user2: 'google:fake',
-        user1Bet: 1000,
-        user2Bet: 1,
-        scratchieValue: 2,
         createdTimestamp: firebase.ServerValue.TIMESTAMP,
+        expires: false,
+        resolved: false,
+        paid: false,
+      };
+    });
 
-        description: 'zzy',
-        notes: '',
+  const inputChange$ = DOM
+    .select('input, select')
+    .events('change')
+    .map(e => ({ [e.target.ref]: getValue(e.target) }))
+    .map(log('change'));
 
-        expires: true,
-        expiresTimestamp: 123,
+  const newBetProperties$ = Observable
+    .merge(inputChange$, defaultValues$)
+    .scan((acc, curr) => {
+      return Object.assign({}, acc, curr);
+    }, {})
+    .map(log('newBetProperties$'));
 
-        resolved: true,
-        resolvedTimestamp: 123,
-        winner: 'google:116128316559316728207',
+  const clickMakeBetButton$ = DOM.select('.makeBet').events('click');
+  const makeBet$ = Observable.combineLatest(
+    clickMakeBetButton$,
+    newBetProperties$,
+    (click, newBet) => ({
+      ref: '/bets',
+      action: ['push', newBet],
+    })
+  );
 
-        paid: true,
-        paidTimestamp: 123,
-        outcome: 1,
-      }],
-    }))
-    .map(log('makeBet$'));
 
-  // DOM sink
+  function input(className, { type='text', ...options }={}, { label='' }={}, style={}) {
+    const inputId = `newBetInput${label.replace(/\s/, '')}`;
+    return [
+      h(`label${className}`, { 'for': inputId }, label),
+      h(`input${className}#${inputId}`, { type, style, ...options }),
+    ];
+  }
+
   const vtree$ = Observable.combineLatest(
+    users$,
     auth$,
-    bets$,
-    accReqRes$,
-    (auth, bets, accReqRes) => {
+    (users, auth) => {
+      return h('div', [
+        h('h1', 'New Bet'),
 
-      console.log({ auth, bets, accReqRes });
+        h('select.user1', { ref: 'user1' }, Object.entries(users).map(
+          ([id, user]) => h('option', { value: id, selected: id === auth.uid }, user.name))
+        ),
+        h('span', ' bets '),
+        h('select.user2', { ref: 'user2' }, Object.entries(users).map(
+          ([id, user]) => h('option', { value: id }, user.name))
+        ),
 
-      return div([
-        h1(`SCRATCHIE`),
-        auth ? h('p', `Logged in as ${auth.google.displayName}`): null,
-        auth ? null : button('.login', 'Log In'),
-        auth ? button('.logout', 'Log Out') : null,
+        h('span', ' that '),
+        input(`.description.${styles.description}`,
+          { ref: 'description', placeholder: '(description)', value: '' }
+        ),
 
+        h('span', ' with '),
+        input(`.user1Bet.${styles.number}`,
+          { ref: 'user1Bet', value: 1 }
+        ),
+        h('span', ' to '),
+        input(`.user2Bet.${styles.number}`,
+          { ref: 'user2Bet', value: 1 }
+        ),
+        h('span', ' odds.'),
 
-        h1('Bets'),
-        button('.new', 'New Bet'),
-        //pre(stringify(bets, true)),
+        h('br'),
+        h('br'),
 
-        Object.entries(bets).map(([key, bet]) => {
-          return h('p', messages.betStatement(bet));
-        }),
+        h('span', 'Scratchie value is $'),
+        input(`.scratchieValue.${styles.number}`,
+          { ref: 'scratchieValue', value: 2 }
+        ),
+        h('span', '.'),
+
+        h('br'),
+        h('br'),
+
+        input(`.notes.${styles.description}`,
+          { ref: 'notes', placeholder: 'Extra notes (optional)' }
+        ),
+
+        h('br'),
+        h('br'),
+
+        //h('span', 'Expires '),
+        //input('',
+        //  { ref: 'expiresTimestamp', type: 'date' }
+        //),
+        //h('br'),
+        //h('br'),
+
+        input('.makeBet',
+          { type: 'button', value: 'Save' }
+        ),
       ]);
     }
   );
 
   const request$ = Observable.merge(
-    mutateRequest$,
-    loginRequest$,
-    logoutRequest$,
-    makeUser$,
     makeBet$
   );
 
@@ -119,17 +156,13 @@ export default function NewBet({ DOM, firebase }) {
 
 const styles = csjs`
 
-  .button {
-    margin-bottom: 10px;
+  .description {
+    width: 400px;
   }
 
-  .table {
-    border-collapse: collapse;
-    border-spacing: 10px;
-  }
-
-  .table th, .table td {
-    border: 1px solid black;
+  .number {
+    width: 35px;
+    text-align: center;
   }
 
 `;

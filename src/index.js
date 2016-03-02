@@ -7,67 +7,29 @@ import { div, h1, button, table, tr, th, td, pre, h, makeDOMDriver } from '@cycl
 import { makeFirebaseDriver } from 'cycle-firebase-driver';
 import csjs from 'csjs-inject';
 
+import globalStyles from './styles/global';
 import { messages } from './bet';
 import { collate, associate, stringify, log } from './util';
-import Tabber from './components/Tabber';
-import Zoom from './components/Zoom';
-import Bets from './views/Bets';
-import Authentication from './views/Authentication';
+import { Tabber } from './components';
+
+import { Authentication, Bets, MyBets, NewBet, Users } from './views';
 
 
 function main(sources) {
   const { DOM, firebase } = sources;
   firebase.mergeAll().subscribe();
 
-
-
-
-
-
-  const makeBet$ = DOM
-    .select('.new')
-    .events('click')
-    .map(() => ({
-      ref: '/bets',
-      action: ['push', {
-        user1: 'google:116128316559316728207',
-        user2: 'google:fake',
-        user1Bet: 1000,
-        user2Bet: 1,
-        scratchieValue: 2,
-        createdTimestamp: firebase.ServerValue.TIMESTAMP,
-
-        description: 'zzy',
-        notes: '',
-
-        expires: true,
-        expiresTimestamp: 123,
-
-        resolved: true,
-        resolvedTimestamp: 123,
-        winner: 'google:116128316559316728207',
-
-        paid: true,
-        paidTimestamp: 123,
-        outcome: 1,
-      }],
-    }))
-    .map(log('makeBet$'));
-
-
-
   const authentication = isolate(Authentication)({ DOM, firebase });
-
+  const newBet = isolate(NewBet)({ DOM, firebase });
   const tabberProps$ = Observable.just({
     tabs: [
-      { name: 'Bets', content: isolate(Bets)({ DOM, firebase }), active: true },
-      { name: 'My Bets', content: isolate(Zoom)({ DOM, title: 'ian' }) },
-      { name: 'New Bet', content: isolate(Zoom)({ DOM, title: 'asdf' }) },
+      { name: 'Bets', content: isolate(Bets)({ DOM, firebase }).DOM, active: true },
+      { name: 'My Bets', content: isolate(MyBets)({ DOM, firebase }).DOM },
+      { name: 'New Bet', content: newBet.DOM },
+      { name: 'Users', content: isolate(Users)({ DOM, firebase }).DOM },
     ],
   });
   const tabber = isolate(Tabber)({ DOM, props$: tabberProps$ });
-
-
 
   const vTree$ = Observable.combineLatest(
     authentication.DOM,
@@ -89,8 +51,8 @@ function main(sources) {
 
 
   const firebaseRequest$ = Observable.merge(
-    makeBet$,
-    authentication.firebase
+    authentication.firebase,
+    newBet.firebase
   ).map(log('firebaseRequest$'));
 
   return {
